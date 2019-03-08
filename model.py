@@ -40,6 +40,72 @@ logging.basicConfig(level=logging.DEBUG, handlers=[fileHandler])
 logger = logging.getLogger("cifar10-net")
 
 
+class Worker():
+    def __init__(self):
+        self.private = []
+        self.public = []
+        self.test = []
+        self.model = resnet.ResNet18().to(device)
+
+    def get_private(self, private):
+        self.private = private
+
+    def get_public(self, public):
+        self.public = public
+
+    def train(self, epoch, method = 'adm'):
+        # 定义损失函数和优化方式
+        criterion = nn.CrossEntropyLoss()  # 损失函数为交叉熵，多用于多分类问题
+        optimizer = optim.Adadelta(self.model.parameters(), weight_decay=5e-4)  # 优化方式为mini-batch momentum-SGD，并采用L2正则化（权重衰减）
+        length = len(self.private)
+        for e in epoch:
+            self.model.train()
+            sum_loss = 0.0
+            correct = 0.0
+            total = 0.0
+            for i, sample in enumerate(self.private, 0):
+                # 准备数据
+                inputs, labels = sample
+                inputs, labels = Variable(inputs).to(
+                    device), Variable(labels).to(device)
+                optimizer.zero_grad()
+
+                # forward + backward
+                outputs = self.model(inputs)
+                labels = labels.squeeze_()
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                # 每训练1个batch打印一次loss和准确率
+                sum_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += predicted.eq(labels.data).cpu().sum()
+                print('[epoch:%d, iter:%d] Loss: %.03f | Acc: %.3f%% '
+                      % (e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
+                logger.info('%03d  %05d |Loss: %.03f | Acc: %.3f%% ' % (
+                    e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
+            # 每训练完一个epoch测试一下准确率
+            self.evaluation()
+
+    def evaluation(self):
+        print("Waiting Test!")
+        with torch.no_grad():
+            correct = 0
+            total = 0
+            for sample in self.test:
+                self.model.eval()
+                image, label = sample
+                image, label = image.to(device), label.to(device)
+                outputs = self.model(image)
+                _, predicted = torch.max(outputs.data, 1)
+                total += label.size(0)
+                label = label.squeeze_()
+                correct += (predicted == label).sum().item()
+            print('测试分类准确率为：%.3f%%' % (100 * correct / total))
+            logger.info('测试分类准确率为：%.3f%%' % (100 * correct / total))
+
+
 def getdata():
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),  # 先四周填充0，在吧图像随机裁剪成32*32
@@ -61,6 +127,11 @@ def getdata():
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
     return trainloader, testloader
+
+
+def data_split()
+    
+
 
 def train(trainloader,testloader, net):
     net.to(device)
@@ -123,5 +194,7 @@ def train(trainloader,testloader, net):
 
 if __name__ == '__main__':
     trainloader, testloader = getdata()
-    net = resnet.ResNet18().to(device)
+    server = resnet.ResNet18().to(device)
+    worker1 = Worker()
+    worker2 = Worker()
     train(trainloader, testloader, net)
