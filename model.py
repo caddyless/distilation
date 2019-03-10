@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import *
 import torch.nn.functional as F
-import csv
 import argparse
 import random
 import os
@@ -204,7 +203,6 @@ class Worker():
                 # 每训练完一个epoch测试一下准确率
                 self.evaluation()
 
-
     def evaluation(self):
         print("Waiting Test!")
         with torch.no_grad():
@@ -301,7 +299,7 @@ def data_place(workers, server, method='iid'):
             sampler = WeightedRandomSampler(weight, )
 
     print('data placed!')
-    return datasets[-1]
+    return pubset
 
 
 def train(workers, server, pubset, epoch=1, method='batchwise'):
@@ -358,7 +356,6 @@ def train(workers, server, pubset, epoch=1, method='batchwise'):
 
     if method == 'epochwise':
         print('train start... method=\'epochwise\'  ')
-        length = len(workers[0].private)
         optimizer = optim.Adadelta(server.model.parameters(), weight_decay=4e-5)
         for e in range(epoch):
             for worker in workers:
