@@ -1,1 +1,4 @@
-print(list(range(0, 10)))
+import torch
+
+a = torch.zeros(1, dtype=torch.double)
+print(a)

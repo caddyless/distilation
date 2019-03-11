@@ -5,12 +5,51 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import *
+from host import Worker
+from host import Server
+from plot import plot_train_trace as ptt
 import torch.nn.functional as F
 import argparse
 import random
 import os
 import logging
-import resnet
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '-m',
+    choices=[
+        'batchwise',
+        'epochwise',
+        'welled',
+        'normal'],
+    default='epochwise',
+    dest='method',
+    help='the train method selected')
+parser.add_argument(
+    '-w',
+    default='3',
+    dest='num_worker',
+    type=int,
+    help='the number of workers')
+parser.add_argument(
+    '-r',
+    default=0.01,
+    dest='ratio',
+    type=float,
+    help='the ratio between public dataset and the whole dataset')
+parser.add_argument(
+    '-e',
+    default=135,
+    dest='epoch',
+    type=int,
+    help='epoch the server need to be trained')
+parser.add_argument(
+    '-p',
+    action='store_true',
+    dest='plot',
+    help='plot the train curve or not')
+args = parser.parse_args()
 
 
 # 定义是否使用GPU
@@ -18,7 +57,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # 超参数设置
-EPOCH = 95  # 遍历数据集次数
+EPOCH = 135  # 遍历数据集次数
 pre_epoch = 0  # 定义已经遍历数据集的次数
 BATCH_SIZE = 128  # 批处理尺寸(batch_size)
 LR = 0.001  # 学习率
@@ -50,184 +89,13 @@ logging.basicConfig(level=logging.DEBUG, handlers=[fileHandler])
 logger = logging.getLogger("cifar10-net")
 
 
-class Server():
-    def __init__(self, name):
-        self.public = []
-        self.test = []
-        self.name = name
-        self.model = resnet.ResNet18().to(device)
-
-    def set_public(self, public):
-        self.public = public
-
-    def set_name(self, name):
-        self.name = name
-
-    def set_test(self, test):
-        self.test = test
-
-    def evaluation(self):
-        print("Waiting Test!")
-        self.model.eval()
-        with torch.no_grad():
-            correct = 0
-            total = 0
-            for sample in self.test:
-                self.model.eval()
-                image, label = sample
-                image, label = image.to(device), label.to(device)
-                outputs = self.model(image)
-                _, predicted = torch.max(outputs.data, 1)
-                total += label.size(0)
-                label = label.squeeze_()
-                correct += (predicted == label).sum().item()
-            print('测试分类准确率为：%.3f%%' % (100 * correct / total))
-            logger.info('测试分类准确率为：%.3f%%' % (100 * correct / total))
-
-
-class Worker():
-    def __init__(self, name):
-        self.private = []
-        self.public = []
-        self.test = []
-        self.name = name
-        self.model = resnet.ResNet18().to(device)
-
-    def set_private(self, private):
-        self.private = private
-
-    def set_public(self, public):
-        self.public = public
-
-    def set_test(self, testloader):
-        self.test = testloader
-
-    def train(self, epoch=1, opti='adm', method='batchwise', index=0):
-        assert method == 'batchwise' or method == 'epochwise' or method == 'welled', 'method error!'
-        # 定义损失函数和优化方式
-        criterion = nn.CrossEntropyLoss()  # 损失函数为交叉熵，多用于多分类问题
-        if opti == 'adm':
-            # 优化方式为mini-batch momentum-SGD，并采用L2正则化（权重衰减）
-            optimizer = optim.Adadelta(
-                self.model.parameters(), weight_decay=5e-4)
-        elif opti == 'SGD':
-            optimizer = optim.SGD(
-                self.model.parameters(),
-                lr=LR,
-                momentum=0.9,
-                weight_decay=5e-4)  # 优化方式为mini-batch momentum-SGD，并采用L2正则化（权重衰减）
-
-        if method == 'batchwise':
-            self.model.train()
-            for i, sample in enumerate(self.private, 0):
-                if i >= index:
-                    # 准备数据
-                    inputs, labels = sample
-                    inputs, labels = Variable(inputs).to(
-                        device), Variable(labels).to(device)
-                    optimizer.zero_grad()
-
-                    # forward + backward
-                    outputs = self.model(inputs)
-                    labels = labels.squeeze_()
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
-                    # 每训练1个batch打印一次loss和准确率
-                    _, predicted = torch.max(outputs.data, 1)
-                    total = labels.size(0)
-                    correct = predicted.eq(labels.data).cpu().sum()
-                    print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        self.name, index, loss.item(), 100. * correct / total))
-                    logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        self.name, index, loss.item(), 100. * correct / total))
-
-        elif method == 'epochwise':
-            self.model.train()
-            sum_loss = 0.0
-            correct = 0.0
-            total = 0.0
-            for i, sample in enumerate(self.private, 0):
-                inputs, labels = sample
-                inputs, labels = Variable(inputs).to(
-                    device), Variable(labels).to(device)
-                optimizer.zero_grad()
-
-                # forward + backward
-                outputs = self.model(inputs)
-                labels = labels.squeeze_()
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                sum_loss += loss.item()
-                # 每训练1个batch打印一次loss和准确率
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += predicted.eq(labels.data).cpu().sum()
-                print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    self.name, i, loss.item(), 100. * correct / total))
-                logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    self.name, i, loss.item(), 100. * correct / total))
-            print('epoch finished! Loss: %.03f | Acc: %.3f%% ' % (sum_loss / i + 1, 100. * correct / total))
-            self.evaluation()
-
-        elif method == 'welled':
-            length = len(self.private)
-            for e in epoch:
-                self.model.train()
-                sum_loss = 0.0
-                correct = 0.0
-                total = 0.0
-                for i, sample in enumerate(self.private, 0):
-                    # 准备数据
-                    inputs, labels = sample
-                    inputs, labels = Variable(inputs).to(
-                        device), Variable(labels).to(device)
-                    optimizer.zero_grad()
-
-                    # forward + backward
-                    outputs = self.model(inputs)
-                    labels = labels.squeeze_()
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
-                    # 每训练1个batch打印一次loss和准确率
-                    sum_loss += loss.item()
-                    _, predicted = torch.max(outputs.data, 1)
-                    total += labels.size(0)
-                    correct += predicted.eq(labels.data).cpu().sum()
-                    print('[epoch:%d, iter:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
-                    logger.info('%03d  %05d |Loss: %.03f | Acc: %.3f%% ' % (
-                        e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
-                # 每训练完一个epoch测试一下准确率
-                self.evaluation()
-
-    def evaluation(self):
-        print("Waiting Test!")
-        with torch.no_grad():
-            correct = 0
-            total = 0
-            for sample in self.test:
-                self.model.eval()
-                image, label = sample
-                image, label = image.to(device), label.to(device)
-                outputs = self.model(image)
-                _, predicted = torch.max(outputs.data, 1)
-                total += label.size(0)
-                label = label.squeeze_()
-                correct += (predicted == label).sum().item()
-            accuracy = 100 * correct / total
-            print('测试分类准确率为：%.3f%%' % accuracy)
-            logger.info('测试分类准确率为：%.3f%%' % accuracy)
-        return accuracy
-
-    def predicted(self, sample):
-        self.model.eval()
-        image, label = sample
-        image, label = image.to(device), label.to(device)
-        outputs = self.model(image)
-        return outputs
+# class DistanceLoss(nn.Module):
+#     def __init__(self):
+#         super(DistanceLoss, self).__init__()
+#         return
+#
+#     def forward(self, inputs, outputs, workers):
+#         for worker in workers:
 
 
 def getdata():
@@ -260,29 +128,38 @@ def getdata():
     return trainset, testset
 
 
-def data_place(workers, server, method='iid'):
+def data_place(workers, server, method='iid', ratio=0.01):
     assert method == 'iid' or method == 'niid', 'method should be iid or niid!'
     print('data placing start...')
     trainset, testset = getdata()
-    length = len(trainset)
+    num_samples = len(trainset)
     num_workers = len(workers)
-    trainloader = torch.utils.data.DataLoader(
-        trainset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=2)  # 生成一个个batch进行批训练，组成batch的时候顺序打乱取
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=100, shuffle=False, num_workers=2)
-    server.set_test = testloader
+    server.set_test(testloader)
     if method == 'iid':
-        datasets = random_split(trainset, int(length / (num_workers + 1)))
-        pubset = torch.utils.data.DataLoader(datasets[-1], batch_size=BATCH_SIZE, shuffle=True,
-                                                    num_workers=2)
-        server.set_public(pubset) # 生成一个个batch进行批训练，组成batch的时候顺序打乱取
+        lengths = []
+        worker_samples = int(num_samples * (1 - ratio) / num_workers)
+        server_samples = int(num_samples * ratio)
+        for w in range(num_workers + 1):
+            if w == num_workers - 1:
+                lengths.append(
+                    num_samples -
+                    w *
+                    worker_samples -
+                    server_samples)
+            elif w == num_workers:
+                lengths.append(server_samples)
+            else:
+                lengths.append(worker_samples)
+        datasets = random_split(trainset, lengths)
+        pubset = torch.utils.data.DataLoader(
+            datasets[-1], batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+        server.set_public(pubset)  # 生成一个个batch进行批训练，组成batch的时候顺序打乱取
         for i, worker in enumerate(workers):
             worker.set_test(testloader)
-            private_set = torch.utils.data.DataLoader(datasets[i], batch_size=BATCH_SIZE, shuffle=True,
-                                                    num_workers=2)
+            private_set = torch.utils.data.DataLoader(
+                datasets[i], batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
             worker.set_private(private_set)
             worker.set_public(pubset)
 
@@ -303,21 +180,20 @@ def data_place(workers, server, method='iid'):
 
 
 def train(workers, server, pubset, epoch=1, method='batchwise'):
-    # 定义损失函数和优化方式
-    criterion = nn.CrossEntropyLoss()  # 损失函数为交叉熵，多用于多分类问题
     best_acc = 0.0
+    train_trace = []
     if method == 'batchwise':
         print('train start... method=\'batchwise\'  ')
         length = len(workers[0].private)
-        optimizer = optim.Adadelta(server.model.parameters(), weight_decay=4e-5)
+        optimizer = optim.Adadelta(
+            server.model.parameters(),
+            weight_decay=4e-5)
         for e in range(epoch):
             for i in range(length):
                 for worker in workers:
                     worker.train(method=method, index=i)
                 server.model.train()
                 sum_loss = 0.0
-                correct = 0.0
-                total = 0.0
                 for j, sample in enumerate(pubset):
                     # 准备数据
                     inputs, labels = sample
@@ -326,44 +202,39 @@ def train(workers, server, pubset, epoch=1, method='batchwise'):
                     optimizer.zero_grad()
                     # forward + backward
                     outputs = server.model(inputs)
-                    labels = labels.squeeze_()
-                    loss = criterion(outputs, labels)
+                    loss = torch.zeros([1], dtype=torch.float)
+                    loss = Variable(loss).to(device)
+                    for k, worker in enumerate(workers):
+                        predicted = worker.model(inputs)
+                        distance = torch.dist(predicted, outputs)
+                        loss += distance
                     loss.backward()
                     optimizer.step()
                     # 每训练1个batch打印一次loss和准确率
                     sum_loss += loss.item()
-                    _, predicted = torch.max(outputs.data, 1)
-                    total += labels.size(0)
-                    correct += predicted.eq(labels.data).cpu().sum()
-                    print('[server:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        server.name, j, loss.item(), 100. * correct / total))
-                    logger.info('[server:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        server.name, j, loss.item(), 100. * correct / total))
-                print('epoch finished! Loss: %.03f | Acc: %.3f%% ' % (sum_loss / i + 1, 100. * correct / total))
+                    print('[server:%s epoch:%d batch:%d] Loss: %.03f ' % (
+                        server.name, e, j, loss.item()))
+                    logger.info(
+                        '[server:%s epoch:%d batch:%d] Loss: %.03f  ' %
+                        (server.name, e, j, loss.item()))
                 accuracy = server.evaluation()
+                train_trace.append((len(train_trace), accuracy))
+                print('epoch finished! Loss: %.03f | Acc: %.3f%% ' %
+                      (sum_loss / (i + 1), accuracy))
                 if accuracy > best_acc:
                     best_acc = accuracy
                     torch.save(server.model.state_dict(), 'tem.pikl')
-        print('saving models')
-        try:
-            os.rename('tem.pikl', '%s-%.3f%%' % (server.name, best_acc))
-        except Exception as e:
-            print(e)
-            print('rename dir fail\r\n')
-        for worker in workers:
-            torch.save(worker.model.state_dict(), '%s-%.3f%%' % (worker.name, best_acc))
-        print('model saved!')
 
-    if method == 'epochwise':
+    elif method == 'epochwise':
         print('train start... method=\'epochwise\'  ')
-        optimizer = optim.Adadelta(server.model.parameters(), weight_decay=4e-5)
+        optimizer = optim.Adadelta(
+            server.model.parameters(),
+            weight_decay=4e-5)
         for e in range(epoch):
             for worker in workers:
                 worker.train(method=method)
             server.model.train()
             sum_loss = 0.0
-            correct = 0.0
-            total = 0.0
             for j, sample in enumerate(pubset):
                 # 准备数据
                 inputs, labels = sample
@@ -372,44 +243,81 @@ def train(workers, server, pubset, epoch=1, method='batchwise'):
                 optimizer.zero_grad()
                 # forward + backward
                 outputs = server.model(inputs)
-                labels = labels.squeeze_()
-                loss = criterion(outputs, labels)
+                loss = torch.zeros(1, dtype=torch.float)
+                loss = Variable(loss).to(device)
+                for k, worker in enumerate(workers):
+                    predicted = worker.model(inputs)
+                    distance = torch.dist(predicted, outputs)
+                    loss += distance
                 loss.backward()
                 optimizer.step()
                 # 每训练1个batch打印一次loss和准确率
                 sum_loss += loss.item()
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += predicted.eq(labels.data).cpu().sum()
-                print('[server:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    server.name, j, loss.item(), 100. * correct / total))
-                logger.info('[server:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    server.name, j, loss.item(), 100. * correct / total))
-            print('epoch finished! Loss: %.03f | Acc: %.3f%% ' % (sum_loss / i + 1, 100. * correct / total))
+                print('[server:%s batch:%d] Loss: %.03f ' % (
+                    server.name, j, loss.item()))
+                logger.info('[server:%s batch:%d] Loss: %.03f  ' % (
+                    server.name, j, loss.item()))
             accuracy = server.evaluation()
+            train_trace.append((len(train_trace), accuracy))
+            print(
+                'epoch finished! Loss: %.03f | Acc: %.3f%% ' %
+                (sum_loss, accuracy))
             if accuracy > best_acc:
                 best_acc = accuracy
                 torch.save(server.model.state_dict(), 'tem.pikl')
-        print('saving models')
-        try:
-            os.rename('tem.pikl', '%s-%.3f%%' % (server.name, best_acc))
-        except Exception as e:
-            print(e)
-            print('rename dir fail\r\n')
-        for worker in workers:
-            torch.save(worker.model.state_dict(), '%s-%.3f%%' % (worker.name, best_acc))
-        print('model saved!')
 
-    if method == 'welled':
+    elif method == 'welled':
         print('train start... method=\'welled\'  ')
-        optimizer = optim.Adadelta(server.model.parameters(), weight_decay=4e-5)
+        optimizer = optim.Adadelta(
+            server.model.parameters(),
+            weight_decay=4e-5)
         for worker in workers:
             worker.train(epoch=epoch, method=method)
         for e in range(epoch):
             server.model.train()
             sum_loss = 0.0
-            correct = 0.0
+            for j, sample in enumerate(pubset):
+                # 准备数据
+                inputs, labels = sample
+                inputs, labels = Variable(inputs).to(
+                    device), Variable(labels).to(device)
+                optimizer.zero_grad()
+                # forward + backward
+                outputs = server.model(inputs)
+                loss = torch.zeros([1], dtype=torch.float)
+                loss = Variable(loss).to(device)
+                for k, worker in enumerate(workers):
+                    predicted = worker.model(inputs)
+                    distance = torch.dist(predicted, outputs)
+                    loss += distance
+                loss.backward()
+                optimizer.step()
+                # 每训练1个batch打印一次loss和准确率
+                sum_loss += loss.item()
+                print('[server:%s batch:%d] Loss: %.03f ' % (
+                    server.name, j, loss.item()))
+                logger.info('[server:%s batch:%d] Loss: %.03f  ' % (
+                    server.name, j, loss.item()))
+            accuracy = server.evaluation()
+            train_trace.append((len(train_trace), accuracy))
+            print(
+                'epoch finished! Loss: %.03f | Acc: %.3f%% ' %
+                (sum_loss, accuracy))
+            if accuracy > best_acc:
+                best_acc = accuracy
+                torch.save(server.model.state_dict(), 'tem.pikl')
+
+    elif method == 'normal':
+        print('train start... method=normal. ')
+        optimizer = optim.Adadelta(
+            server.model.parameters(),
+            weight_decay=4e-5)
+        criterion = nn.CrossEntropyLoss()
+        for e in range(epoch):
+            server.model.train()
+            sum_loss = 0.0
             total = 0.0
+            correct = 0.0
             for j, sample in enumerate(pubset):
                 # 准备数据
                 inputs, labels = sample
@@ -426,37 +334,52 @@ def train(workers, server, pubset, epoch=1, method='batchwise'):
                 sum_loss += loss.item()
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
-                correct += predicted.eq(labels.data).cpu().sum()
-                print('[server:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    server.name, j, loss.item(), 100. * correct / total))
-                logger.info('[server:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    server.name, j, loss.item(), 100. * correct / total))
-            print('epoch finished! Loss: %.03f | Acc: %.3f%% ' % (sum_loss / i + 1, 100. * correct / total))
+                correct += predicted.eq(labels).cpu().sum()
+                print(
+                    '[server:%s epoch:%d batch:%d] Loss: %.03f | Acc: %.3f%%' %
+                    (server.name, e, j, loss.item(), 100 * correct / total))
+                logger.info(
+                    '[server:%s epoch:%d batch:%d] Loss: %.03f | Acc: %.3f%%' %
+                    (server.name, e, j, loss.item(), 100 * correct / total))
             accuracy = server.evaluation()
+            train_trace.append((len(train_trace), accuracy))
+            print(
+                'epoch finished! Loss: %.03f | Acc: %.3f%% ' %
+                (sum_loss, accuracy))
             if accuracy > best_acc:
                 best_acc = accuracy
                 torch.save(server.model.state_dict(), 'tem.pikl')
-        print('saving models')
-        try:
-            os.rename('tem.pikl', '%s-%.3f%%' % (server.name, best_acc))
-        except Exception as e:
-            print(e)
-            print('rename dir fail\r\n')
-        for worker in workers:
-            torch.save(worker.model.state_dict(), '%s-%.3f%%' % (worker.name, best_acc))
-        print('model saved!')
 
+    print('saving models')
+    try:
+        os.rename('tem.pikl', '%s-%s-%d-%.2f-%.3f%%.pikl' %
+                  (server.name, method, args.num_worker, args.ratio, best_acc))
+    except Exception as e:
+        print(e)
+        print('rename dir fail\r\n')
+    for worker in workers:
+        torch.save(worker.model.state_dict(), '%s-%s-%d-%.2f-%.3f%%.pikl' %
+                   (worker.name, method, args.num_worker, args.ratio, best_acc))
+    print('model saved!')
+    if args.plot:
+        print('plot...')
+        ptt(train_trace, '%s-%s-%d-%.2f-%.3f%%.png' %
+                   (server.name, method, args.num_worker, args.ratio, best_acc))
+        for worker in workers:
+
+        print('finished!')
     print('train finished!')
 
 
 if __name__ == '__main__':
     workers = []
-    worker1 = Worker('worker1')
-    workers.append(worker1)
-    worker2 = Worker('worker2')
-    workers.append(worker2)
-    worker3 = Worker('worker3')
-    workers.append(worker3)
+    for i in range(args.num_worker):
+        workers.append(Worker('worker%d' % i))
     server = Server('server')
-    pubset = data_place(workers=workers, server=server)
-    train(workers=workers, server=server, pubset=pubset, epoch=135)
+    pubset = data_place(workers=workers, server=server, ratio=args.ratio)
+    train(
+        workers=workers,
+        server=server,
+        pubset=pubset,
+        epoch=args.epoch,
+        method=args.method)
