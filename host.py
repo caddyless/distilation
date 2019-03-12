@@ -2,25 +2,12 @@ from torch.autograd import Variable
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import resnet
-import logging
+import model
+from init import logger_worker
 from plot import plot_train_trace as ptt
-
-# 定义是否使用GPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from init import device
 
 LR = 0.001  # 学习率
-
-# 设置log
-fileHandler = logging.FileHandler('host.log')
-fileHandler.setLevel(logging.INFO)
-fileHandler.setFormatter(
-    logging.Formatter(
-        '[%(asctime)s	%(levelname)s]	%(message)s',
-        datefmt='%H:%M:%S'))
-logging.getLogger("host").setLevel(logging.WARNING)
-logging.basicConfig(level=logging.DEBUG, handlers=[fileHandler])
-logger = logging.getLogger("host")
 
 
 class Server():
@@ -28,7 +15,7 @@ class Server():
         self.public = []
         self.test = []
         self.name = name
-        self.model = resnet.ResNet18().to(device)
+        self.model = model.ResNet18().to(device)
         self.train_trace = []
 
     def set_public(self, public):
@@ -57,7 +44,7 @@ class Server():
                 correct += (predicted == label).sum().item()
             accuracy = 100 * correct / total
             print('测试分类准确率为：%.3f%%' % accuracy)
-            logger.info('测试分类准确率为：%.3f%%' % accuracy)
+            logger_worker.info('测试分类准确率为：%.3f%%' % accuracy)
             self.train_trace.append((len(self.train_trace), accuracy))
         return accuracy
 
@@ -71,7 +58,7 @@ class Worker():
         self.public = []
         self.test = []
         self.name = name
-        self.model = resnet.ResNet18().to(device)
+        self.model = model.ResNet18().to(device)
         self.train_trace = []
         self.verbose = False
 
@@ -83,6 +70,14 @@ class Worker():
 
     def set_test(self, testloader):
         self.test = testloader
+
+    def data_distri(self):
+        distribution = [0] * 10
+        for i, sample in enumerate(self.private):
+            data, labels = sample
+            for l in labels:
+                distribution[int(l)] += 1
+        return distribution
 
     def train(self, epoch=1, opti='adm', method='batchwise', index=0):
         assert method == 'batchwise' or method == 'epochwise' or method == 'welled', 'method error!'
@@ -120,10 +115,12 @@ class Worker():
                     total = labels.size(0)
                     correct = predicted.eq(labels.data).cpu().sum()
                     if self.verbose:
-                        print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                            self.name, index, loss.item(), 100. * correct / total))
-                        logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                            self.name, index, loss.item(), 100. * correct / total))
+                        print(
+                            '[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' %
+                            (self.name, index, loss.item(), 100. * correct / total))
+                        logger_worker.info(
+                            '[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' %
+                            (self.name, index, loss.item(), 100. * correct / total))
 
         elif method == 'epochwise':
             self.model.train()
@@ -150,10 +147,11 @@ class Worker():
                 if self.verbose:
                     print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
                         self.name, i, loss.item(), 100. * correct / total))
-                    logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        self.name, i, loss.item(), 100. * correct / total))
-            print('epoch finished! Loss: %.03f | Acc: %.3f%% ' % (sum_loss / i + 1, 100. * correct / total))
-            self.evaluation()
+                    logger_worker.info(
+                        '[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' %
+                        (self.name, i, loss.item(), 100. * correct / total))
+            print('epoch finished! Loss: %.03f | Acc: %.3f%% ' %
+                  (sum_loss / i + 1, 100. * correct / total))
 
         elif method == 'welled':
             length = len(self.private)
@@ -183,10 +181,12 @@ class Worker():
                     if self.verbose:
                         print('[%s epoch:%d, iter:%d] Loss: %.03f | Acc: %.3f%% ' % (
                             self.name, e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
-                        logger.info('%s epoch:%d, iter%d |Loss: %.03f | Acc: %.3f%% ' % (
+                        logger_worker.info('%s epoch:%d, iter%d |Loss: %.03f | Acc: %.3f%% ' % (
                             self.name, e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
                 # 每训练完一个epoch测试一下准确率
-                self.evaluation()
+                accuracy = self.evaluation()
+                print('%s | Epoch : %d | Acc：%.3f%%' % (self.name, e, accuracy))
+                logger_worker.info('%s | Epoch : %d | Acc：%.3f%%' % (self.name, e, accuracy))
 
     def evaluation(self):
         print("Waiting Test!")
@@ -203,8 +203,6 @@ class Worker():
                 label = label.squeeze_()
                 correct += (predicted == label).sum().item()
             accuracy = 100 * correct / total
-            print('%s | Acc：%.3f%%' % (self.name, accuracy))
-            logger.info('%s | Acc：%.3f%%' % (self.name, accuracy))
             self.train_trace.append((len(self.train_trace), accuracy))
         return accuracy
 

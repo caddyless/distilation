@@ -1,4 +1,4 @@
 import torch
 
-a = torch.zeros(1, dtype=torch.double)
-print(a)
+distribution = [0] * 10
+print(distribution)
