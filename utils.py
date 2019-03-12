@@ -276,20 +276,30 @@ def train(workers, server, epoch=1, method='batchwise'):
 
     print('saving models')
     try:
-        os.rename('model/tem.pikl', 'model/%s-%s-%d-%.2f-%.3f%%.pikl' %
-                  (server.name, method, args.num_worker, args.ratio, best_acc))
+        os.rename(
+            'model/tem.pikl',
+            'model/%s-%d-%d-%f/%s.pikl' %
+            (args.method,
+             args.num_worker,
+             args.epoch,
+             args.ratio,
+             server.name))
     except Exception as e:
         print(e)
         print('rename dir fail\r\n')
     if method != 'normal':
         for worker in workers:
             torch.save(
-                worker.model.state_dict(), 'model/%s-%s-%d-%.2f-%.3f%%.pikl' %
-                (worker.name, method, args.num_worker, args.ratio, best_acc))
+                worker.model.state_dict(),
+                'model/%s-%d-%d-%f/%s.pikl' %
+                (args.method,
+                 args.num_worker,
+                 args.epoch,
+                 args.ratio,
+                 worker.name))
     print('model saved!')
     if args.plot:
         print('plot...')
         server.plot(server.name)
         print('finished!')
     print('train finished!')
-
