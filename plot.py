@@ -4,6 +4,7 @@ import os
 
 
 def plot_train_trace(train_trace, filename):
+    filename = 'image/' + filename
     if os.path.isfile(filename):
         print('file existed! rename it..')
         new_name = 'r-' + filename

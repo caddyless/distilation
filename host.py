@@ -1,17 +1,10 @@
 from torch.autograd import Variable
-import torchvision
-import torchvision.transforms as transforms
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import *
-import torch.nn.functional as F
-import argparse
-import random
-import os
-import logging
 import resnet
 import logging
+from plot import plot_train_trace as ptt
 
 # 定义是否使用GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -68,6 +61,9 @@ class Server():
             self.train_trace.append((len(self.train_trace), accuracy))
         return accuracy
 
+    def plot(self, filename):
+        ptt(self.train_trace, filename)
+
 
 class Worker():
     def __init__(self, name):
@@ -77,6 +73,7 @@ class Worker():
         self.name = name
         self.model = resnet.ResNet18().to(device)
         self.train_trace = []
+        self.verbose = False
 
     def set_private(self, private):
         self.private = private
@@ -122,10 +119,11 @@ class Worker():
                     _, predicted = torch.max(outputs.data, 1)
                     total = labels.size(0)
                     correct = predicted.eq(labels.data).cpu().sum()
-                    print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        self.name, index, loss.item(), 100. * correct / total))
-                    logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        self.name, index, loss.item(), 100. * correct / total))
+                    if self.verbose:
+                        print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
+                            self.name, index, loss.item(), 100. * correct / total))
+                        logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
+                            self.name, index, loss.item(), 100. * correct / total))
 
         elif method == 'epochwise':
             self.model.train()
@@ -149,10 +147,11 @@ class Worker():
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
                 correct += predicted.eq(labels.data).cpu().sum()
-                print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    self.name, i, loss.item(), 100. * correct / total))
-                logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                    self.name, i, loss.item(), 100. * correct / total))
+                if self.verbose:
+                    print('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
+                        self.name, i, loss.item(), 100. * correct / total))
+                    logger.info('[worker:%s batch:%d] Loss: %.03f | Acc: %.3f%% ' % (
+                        self.name, i, loss.item(), 100. * correct / total))
             print('epoch finished! Loss: %.03f | Acc: %.3f%% ' % (sum_loss / i + 1, 100. * correct / total))
             self.evaluation()
 
@@ -181,10 +180,11 @@ class Worker():
                     _, predicted = torch.max(outputs.data, 1)
                     total += labels.size(0)
                     correct += predicted.eq(labels.data).cpu().sum()
-                    print('[epoch:%d, iter:%d] Loss: %.03f | Acc: %.3f%% ' % (
-                        e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
-                    logger.info('%03d  %05d |Loss: %.03f | Acc: %.3f%% ' % (
-                        e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
+                    if self.verbose:
+                        print('[%s epoch:%d, iter:%d] Loss: %.03f | Acc: %.3f%% ' % (
+                            self.name, e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
+                        logger.info('%s epoch:%d, iter%d |Loss: %.03f | Acc: %.3f%% ' % (
+                            self.name, e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
                 # 每训练完一个epoch测试一下准确率
                 self.evaluation()
 
@@ -203,8 +203,8 @@ class Worker():
                 label = label.squeeze_()
                 correct += (predicted == label).sum().item()
             accuracy = 100 * correct / total
-            print('测试分类准确率为：%.3f%%' % accuracy)
-            logger.info('测试分类准确率为：%.3f%%' % accuracy)
+            print('%s | Acc：%.3f%%' % (self.name, accuracy))
+            logger.info('%s | Acc：%.3f%%' % (self.name, accuracy))
             self.train_trace.append((len(self.train_trace), accuracy))
         return accuracy
 
@@ -215,4 +215,5 @@ class Worker():
         outputs = self.model(image)
         return outputs
 
-    def plot(self, ):
+    def plot(self, filename):
+        ptt(self.train_trace, filename)
