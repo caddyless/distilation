@@ -2,7 +2,7 @@ from torch.autograd import Variable
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import model
+from model import ResNet18
 from init import logger_worker
 from plot import plot_train_trace as ptt
 from init import device
@@ -15,7 +15,7 @@ class Server():
         self.public = []
         self.test = []
         self.name = name
-        self.model = model.ResNet18().to(device)
+        self.model = ResNet18().to(device)
         self.train_trace = []
 
     def set_public(self, public):
@@ -58,7 +58,7 @@ class Worker():
         self.public = []
         self.test = []
         self.name = name
-        self.model = model.ResNet18().to(device)
+        self.model = ResNet18().to(device)
         self.train_trace = []
         self.verbose = False
 

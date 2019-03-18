@@ -9,6 +9,19 @@ import torch.optim as optim
 from torch.autograd import Variable
 from init import device
 from init import logger_server
+import math
+
+
+def loss_function(inputs, labels, method='cross_entropy'):
+    assert isinstance(inputs, torch.Tensor) and isinstance(labels, torch.Tensor),'input type must be tensor'
+    if method == 'cross_entropy':
+        dim = inputs.size()
+        assert dim == labels.size(), 'size of input and label are not consistent'
+        loss = torch.sum(labels.mul(torch.log10(inputs) / math.log10(dim[1])))
+        return loss
+    elif method == 'distance':
+        distance = torch.dist(inputs, labels)
+        return distance
 
 
 def get_data():
@@ -124,7 +137,7 @@ def train(workers, server, epoch=1, method='batchwise'):
                     for k, worker in enumerate(workers):
                         labels = worker.model(inputs)
                         # distance = torch.dist(predicted, outputs)
-                        loss += criterion(outputs, labels)
+                        loss += loss_function(outputs, labels)
                     loss.backward()
                     optimizer.step()
                     # 每训练1个batch打印一次loss和准确率
@@ -167,7 +180,7 @@ def train(workers, server, epoch=1, method='batchwise'):
                 for k, worker in enumerate(workers):
                     labels = worker.model(inputs)
                     # distance = torch.dist(predicted, outputs)
-                    loss += criterion(outputs, labels)
+                    loss += loss_function(outputs, labels)
                 loss.backward()
                 optimizer.step()
                 # 每训练1个batch打印一次loss和准确率
@@ -213,7 +226,7 @@ def train(workers, server, epoch=1, method='batchwise'):
                 for k, worker in enumerate(workers):
                     labels = worker.model(inputs)
                     # distance = torch.dist(predicted, outputs)
-                    loss += criterion(outputs, labels)
+                    loss += loss_function(outputs, labels)
                 loss.backward()
                 optimizer.step()
                 # 每训练1个batch打印一次loss和准确率

@@ -1,10 +1,6 @@
 import torch
-from host import Worker
-from host import Server
-from utils import data_place as dp
 import argparse
 import logging
-from utils import train
 import os
 
 
@@ -75,7 +71,8 @@ if not os.path.isdir('log'):
     os.mkdir('log')
 if not os.path.isdir('log/%s-%d-%d-%f' %
                      (args.method, args.num_worker, args.epoch, args.ratio)):
-    os.mkdir('log/%s-%d-%d-%f')
+    os.mkdir('log/%s-%d-%d-%f' %
+             (args.method, args.num_worker, args.epoch, args.ratio))
 if not os.path.isdir('model'):
     os.mkdir('model')
 if not os.path.isdir('model/%s-%d-%d-%f' %
@@ -101,7 +98,7 @@ if not os.path.isdir('train_trace/%s-%d-%d-%f/image' %
 logger_worker = logging.getLogger('worker')
 logger_worker.setLevel(level=logging.INFO)
 fileHandler = logging.FileHandler(
-    'log/%s-%d-%d-%f.log/worker.log' %
+    'log/%s-%d-%d-%f/worker.log' %
     (args.method, args.num_worker, args.epoch, args.ratio))
 fileHandler.setLevel(logging.INFO)
 fileHandler.setFormatter(
@@ -133,23 +130,3 @@ fileHandler.setFormatter(
         '[%(asctime)s	%(levelname)s]	%(message)s',
         datefmt='%H:%M:%S'))
 logger_IO.addHandler(fileHandler)
-
-
-if __name__ == '__main__':
-    # 初始化worker和server
-    workers = []
-    for i in range(args.num_worker):
-        worker = Worker('worker%d' % i)
-        worker.verbose = args.verbose
-        workers.append(worker)
-    server = Server('server')
-
-    # 在worker和server上分布数据
-    dp(workers=workers, server=server, ratio=args.ratio)
-
-    # 开始训练
-    train(
-        workers=workers,
-        server=server,
-        epoch=args.epoch,
-        method=args.method)
