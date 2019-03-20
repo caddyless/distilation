@@ -11,3 +11,4 @@ do
         scp -P 3135 $file lijin@202.120.36.100:~/distilation
     fi
 done
+echo "Done!"
