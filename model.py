@@ -7,6 +7,38 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class LeNet(nn.Module):
+    def __init__(self):
+        super(LeNet, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(128 * 4 * 4, 625)
+        self.fc2 = nn.Linear(625, 10)
+        self.dropout = nn.Dropout()
+
+    def forward(self, x):
+        x = self.conv1(x)
+        self.relu(x)
+        x = self.pool(x)
+        x = self.dropout(x)
+        x = self.conv2(x)
+        self.relu(x)
+        x = self.pool(x)
+        x = self.dropout(x)
+        x = self.conv3(x)
+        self.relu(x)
+        x = self.pool(x)
+        x = self.dropout(x)
+        x = x.view(x.size()[0], -1)
+        x = self.fc1(x)
+        x = self.dropout(x)
+        out = self.fc2(x)
+        return out
+
+
 class ResidualBlock(nn.Module):
     def __init__(self, inchannel, outchannel, stride=1):
         super(ResidualBlock, self).__init__()
@@ -32,7 +64,7 @@ class ResidualBlock(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, ResidualBlock, num_classes=12):
+    def __init__(self, ResidualBlock, num_classes=10):
         super(ResNet, self).__init__()
         self.inchannel = 64
         self.conv1 = nn.Sequential(
@@ -66,16 +98,12 @@ class ResNet(nn.Module):
         return out
 
 
-class Lenet(nn.Module):
-    def __init__(self):
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
-
-
-
 def ResNet18():
     return ResNet(ResidualBlock)
+
+
+def Lenet():
+    return LeNet()
 
 
 

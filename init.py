@@ -4,6 +4,7 @@ import logging
 import os
 
 
+os.environ["CUDA_VISIABLE_DEVICES"] = '1'
 # 从命令行获取参数
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -13,7 +14,7 @@ parser.add_argument(
         'epochwise',
         'welled',
         'normal'],
-    default='epochwise',
+    default='welled',
     dest='method',
     help='the train method selected')
 parser.add_argument(
@@ -44,6 +45,11 @@ parser.add_argument(
     action='store_true',
     dest='verbose',
     help='show the detail or not')
+parser.add_argument(
+    '-n',
+    dest='net',
+    default='LeNet',
+    help='select the net model')
 args = parser.parse_args()
 
 # 定义是否使用GPU

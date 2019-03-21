@@ -10,10 +10,12 @@ from torch.autograd import Variable
 from init import device
 from init import logger_server
 import math
+import random
 
 
 def loss_function(inputs, labels, method='cross_entropy'):
-    assert isinstance(inputs, torch.Tensor) and isinstance(labels, torch.Tensor),'input type must be tensor'
+    assert isinstance(inputs, torch.Tensor) and isinstance(
+        labels, torch.Tensor), 'input type must be tensor'
     if method == 'cross_entropy':
         dim = inputs.size()
         assert dim == labels.size(), 'size of input and label are not consistent'
@@ -90,17 +92,27 @@ def data_place(workers, server, method='iid', ratio=0.01, BATCH_SIZE=128):
             worker.set_public(pubset)
 
     elif method == 'niid':
+        pub_len = int(50000 * ratio)
+        lengths = [50000 - pub_len, pub_len]
+        datasets = random_split(trainset, lengths)
+        pubset = torch.utils.data.DataLoader(
+            datasets[-1], batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+        worker_set = datasets[0]
+        server.set_public(pubset)
         for i, worker in enumerate(workers):
             worker.test = testloader
+            worker.public = pubset
             weight = list(range(0, 10))
-            peek = int((i + 1) / num_workers * 10)
-            for j in range(10):
-                if j == i:
-                    weight[j] = i
-                else:
-                    weight[j] = abs(1 / (i - j) * (j - 4.5))
-            sampler = WeightedRandomSampler(weight, )
-
+            for j in range(3):
+                index = random.randint(0, 9)
+                while weight[index] == 1:
+                    index = random.randint(0, 9)
+                weight[index] = 1
+            sampler = WeightedRandomSampler(
+                weight, 50000 / args.num_worker, replacement=False)
+            trainloader = torch.utils.data.DataLoader(
+                worker_set, sampler=sampler, num_workers=2, batch_size=BATCH_SIZE)
+            worker.private = trainloader
     print('data placed!')
     return pubset
 
@@ -114,7 +126,7 @@ def train(workers, server, epoch=1, method='batchwise'):
     if not os.path.isdir('image'):
         os.mkdir('image')
     if method == 'batchwise':
-        print('train start... method=\'batchwise\'  ')
+        print('train start... method=\'batchwise\' ')
         length = len(workers[0].private)
         optimizer = optim.Adadelta(
             server.model.parameters(),

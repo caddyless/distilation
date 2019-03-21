@@ -15,7 +15,7 @@ if __name__ == '__main__':
     server = Server('server')
 
     # 在worker和server上分布数据
-    dp(workers=workers, server=server, ratio=args.ratio)
+    dp(workers=workers, server=server, ratio=args.ratio, method='niid')
 
     # 开始训练
     train(
