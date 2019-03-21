@@ -14,7 +14,7 @@ class LeNet(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
-        self.pool = F.max_pool2d(kernel_size=2, stride=2)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.fc1 = nn.Linear(128 * 4 * 4, 625)
         self.fc2 = nn.Linear(625, 10)
         self.dropout = nn.Dropout()
@@ -64,7 +64,7 @@ class ResidualBlock(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, ResidualBlock, num_classes=12):
+    def __init__(self, ResidualBlock, num_classes=10):
         super(ResNet, self).__init__()
         self.inchannel = 64
         self.conv1 = nn.Sequential(
@@ -101,7 +101,7 @@ class ResNet(nn.Module):
 def ResNet18():
     return ResNet(ResidualBlock)
 
-def LeNet():
+def Lenet():
     return LeNet()
 
 

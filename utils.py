@@ -90,6 +90,7 @@ def data_place(workers, server, method='iid', ratio=0.01, BATCH_SIZE=128):
             worker.set_public(pubset)
 
     elif method == 'niid':
+
         for i, worker in enumerate(workers):
             worker.test = testloader
             weight = list(range(0, 10))

@@ -3,9 +3,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from model import ResNet18
+from model import Lenet
 from init import logger_worker
 from plot import plot_train_trace as ptt
 from init import device
+from init import args
 
 LR = 0.001  # 学习率
 
@@ -15,7 +17,10 @@ class Server():
         self.public = []
         self.test = []
         self.name = name
-        self.model = ResNet18().to(device)
+        if args.net == 'LeNet':
+            self.model = Lenet()
+        elif args.net == 'ResNet18':
+            self.model = ResNet18().to(device)
         self.train_trace = []
 
     def set_public(self, public):
@@ -58,7 +63,10 @@ class Worker():
         self.public = []
         self.test = []
         self.name = name
-        self.model = ResNet18().to(device)
+        if args.net == 'LeNet':
+            self.model = Lenet().to(device)
+        elif args.net == 'ResNet18':
+            self.model = ResNet18().to(device)
         self.train_trace = []
         self.verbose = False
 
