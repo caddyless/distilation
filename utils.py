@@ -126,7 +126,7 @@ def data_place(workers, server, beta=3, ratio=0.01, BATCH_SIZE=128):
         private = []
         for sample in private_set:
             if int(sample[2]) in selected:
-                if 
+                if
 
     print('data placed!')
 
