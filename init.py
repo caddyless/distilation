@@ -31,7 +31,7 @@ parser.add_argument(
     help='the ratio between public dataset and the whole dataset')
 parser.add_argument(
     '-e',
-    default=135,
+    default=60,
     dest='epoch',
     type=int,
     help='epoch the server need to be trained')
@@ -73,6 +73,10 @@ classes = (
     'truck')
 
 # 检查文件路径
+if not os.path.isdir('data'):
+    os.mkdir('data')
+if not os.path.isdir('data/mid-data'):
+    os.mkdir('data/mid-data')
 if not os.path.isdir('log'):
     os.mkdir('log')
 if not os.path.isdir('log/%s-%d-%d-%f' %

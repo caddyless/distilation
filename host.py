@@ -12,16 +12,17 @@ from init import args
 LR = 0.001  # 学习率
 
 
-class Server():
+class Host():
     def __init__(self, name):
         self.public = []
         self.test = []
         self.name = name
+        self.train_trace = []
+        self.verbose = False
         if args.net == 'LeNet':
-            self.model = Lenet()
+            self.model = Lenet().to(device)
         elif args.net == 'ResNet18':
             self.model = ResNet18().to(device)
-        self.train_trace = []
 
     def set_public(self, public):
         self.public = public
@@ -56,28 +57,27 @@ class Server():
     def plot(self, filename):
         ptt(self.train_trace, filename)
 
+    def predicted(self, sample):
+        self.model.eval()
+        image, label = sample
+        image, label = image.to(device), label.to(device)
+        outputs = self.model(image)
+        return outputs
 
-class Worker():
+
+class Server(Host):
     def __init__(self, name):
+        super(Server, self).__init__(name)
+
+
+class Worker(Host):
+    def __init__(self, name):
+        super(Worker, self).__init__(name)
         self.private = []
-        self.public = []
-        self.test = []
-        self.name = name
-        if args.net == 'LeNet':
-            self.model = Lenet().to(device)
-        elif args.net == 'ResNet18':
-            self.model = ResNet18().to(device)
-        self.train_trace = []
         self.verbose = False
 
     def set_private(self, private):
         self.private = private
-
-    def set_public(self, public):
-        self.public = public
-
-    def set_test(self, testloader):
-        self.test = testloader
 
     def data_distri(self):
         distribution = [0] * 10
@@ -195,31 +195,3 @@ class Worker():
                 accuracy = self.evaluation()
                 print('%s | Epoch : %d | Acc：%.3f%%' % (self.name, e, accuracy))
                 logger_worker.info('%s | Epoch : %d | Acc：%.3f%%' % (self.name, e, accuracy))
-
-    def evaluation(self):
-        print("Waiting Test!")
-        with torch.no_grad():
-            correct = 0
-            total = 0
-            for sample in self.test:
-                self.model.eval()
-                image, label = sample
-                image, label = image.to(device), label.to(device)
-                outputs = self.model(image)
-                _, predicted = torch.max(outputs.data, 1)
-                total += label.size(0)
-                label = label.squeeze_()
-                correct += (predicted == label).sum().item()
-            accuracy = 100 * correct / total
-            self.train_trace.append((len(self.train_trace), accuracy))
-        return accuracy
-
-    def predicted(self, sample):
-        self.model.eval()
-        image, label = sample
-        image, label = image.to(device), label.to(device)
-        outputs = self.model(image)
-        return outputs
-
-    def plot(self, filename):
-        ptt(self.train_trace, filename)

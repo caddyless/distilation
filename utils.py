@@ -10,7 +10,42 @@ from torch.autograd import Variable
 from init import device
 from init import logger_server
 import math
+import numpy as np
 import random
+
+
+def data_save(dataset, name):
+    np_index = []
+    np_data = []
+    np_label = []
+    for sample in dataset:
+        index, data, label = sample
+        np_index.append(index)
+        np_data.append(data)
+        np_label.append(label)
+    np_index = np.asarray(np_index)
+    np_data = np.asarray(np_data)
+    np_label = np.asarray(np_label)
+    np.savez(name + '.npz', index=np_index, data=np_data, label=np_label)
+
+
+def data_load(file):
+    dataset = np.load(file)
+    index = dataset['index'].tolist()
+    data = dataset['data'].tolist()
+    label = dataset['label'].tolist()
+    dataset = zip(index, data, label)
+    return dataset
+
+
+def random_list(length):
+    a = []
+    for i in range(length):
+        b = random.randint(0, 9)
+        while b in a:
+            b = random.randint(0, 9)
+        a.append(b)
+    return a
 
 
 def loss_function(inputs, labels, method='cross_entropy'):
@@ -45,7 +80,7 @@ def get_data():
         root='./data',
         train=True,
         download=True,
-        transform=transform_train)  # 训练数据集
+    )  # 训练数据集
     testset = torchvision.datasets.CIFAR10(
         root='./data',
         train=False,
@@ -56,65 +91,44 @@ def get_data():
     return trainset, testset
 
 
-def data_place(workers, server, method='iid', ratio=0.01, BATCH_SIZE=128):
-    assert method == 'iid' or method == 'niid', 'method should be iid or niid!'
+def data_place(workers, server, beta=3, ratio=0.01, BATCH_SIZE=128):
+
     print('data placing start...')
+    # 获取基本数据
     trainset, testset = get_data()
     num_samples = len(trainset)
     num_workers = len(workers)
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=100, shuffle=False, num_workers=2)
-    server.set_test(testloader)
-    if method == 'iid':
-        lengths = []
-        worker_samples = int(num_samples * (1 - ratio) / num_workers)
-        server_samples = int(num_samples * ratio)
-        for w in range(num_workers + 1):
-            if w == num_workers - 1:
-                lengths.append(
-                    num_samples -
-                    w *
-                    worker_samples -
-                    server_samples)
-            elif w == num_workers:
-                lengths.append(server_samples)
-            else:
-                lengths.append(worker_samples)
-        datasets = random_split(trainset, lengths)
-        pubset = torch.utils.data.DataLoader(
-            datasets[-1], batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-        server.set_public(pubset)  # 生成一个个batch进行批训练，组成batch的时候顺序打乱取
-        for i, worker in enumerate(workers):
-            worker.set_test(testloader)
-            private_set = torch.utils.data.DataLoader(
-                datasets[i], batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-            worker.set_private(private_set)
-            worker.set_public(pubset)
+    num_class = list(range(0, 49999, 5000))
 
-    elif method == 'niid':
-        pub_len = int(50000 * ratio)
-        lengths = [50000 - pub_len, pub_len]
-        datasets = random_split(trainset, lengths)
-        pubset = torch.utils.data.DataLoader(
-            datasets[-1], batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-        worker_set = datasets[0]
-        server.set_public(pubset)
-        for i, worker in enumerate(workers):
-            worker.test = testloader
-            worker.public = pubset
-            weight = list(range(0, 10))
-            for j in range(3):
-                index = random.randint(0, 9)
-                while weight[index] == 1:
-                    index = random.randint(0, 9)
-                weight[index] = 1
-            sampler = WeightedRandomSampler(
-                weight, 50000 / args.num_worker, replacement=False)
-            trainloader = torch.utils.data.DataLoader(
-                worker_set, sampler=sampler, num_workers=2, batch_size=BATCH_SIZE)
-            worker.private = trainloader
+    # 为每一个训练样本编号  (data, label) -> (id, data, label)
+    np_data = [0] * num_samples
+    for i in range(num_samples):
+        data, label = trainset[i]
+        id = num_class[int(label)]
+        np_data[id] = data
+        num_class[int(label)] += 1
+        trainset[i] = (id, data, label)
+    np.asarray(np_data, dtype=np.float32)
+    np.save('data/mid-data/origin.npy', np_data)
+
+    # 划分私有数据和公有数据
+    pub_length = int(num_samples * ratio)
+    private_set, public_set = random_split(
+        trainset, [num_samples - pub_length, pub_length])
+    name = 'data/mid-data/' + str(ratio) + '-' + str(beta)
+    data_save(private_set, name + 'pri')
+    data_save(public_set, name + 'pub')
+
+    # 根据参数beta划分私有集， beta = n, n in range(0,10), 表示每个worker上只有n种数据
+    for worker in workers:
+        worker.set_public(public_set)
+        selected = random_list(beta)
+        private = []
+        for sample in private_set:
+            if int(sample[2]) in selected:
+                if 
+
     print('data placed!')
-    return pubset
 
 
 def train(workers, server, epoch=1, method='batchwise'):
