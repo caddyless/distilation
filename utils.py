@@ -15,26 +15,31 @@ import random
 
 
 def data_save(dataset, name):
-    np_index = []
-    np_data = []
-    np_label = []
-    for sample in dataset:
-        index, data, label = sample
-        np_index.append(index)
-        np_data.append(data)
-        np_label.append(label)
-    np_index = np.asarray(np_index)
-    np_data = np.asarray(np_data)
-    np_label = np.asarray(np_label)
-    np.savez(name + '.npz', index=np_index, data=np_data, label=np_label)
+    if len(dataset[0]) == 3:
+        np_index = np.asarray([sample[0] for sample in dataset])
+        np_data = np.asarray([sample[1].numpy() for sample in dataset])
+        np_label = np.asarray([sample[2] for sample in dataset])
+        np.savez(name + '.npz', index=np_index, data=np_data, label=np_label)
+    elif len(dataset[0]) == 2:
+        np_data = np.asarray([sample[0].numpy() for sample in dataset])
+        np_label = np.asarray([sample[1] for sample in dataset])
+        np.savez(name + '.npz', data=np_data, label=np_label)
 
 
 def data_load(file):
     dataset = np.load(file)
-    index = dataset['index'].tolist()
-    data = dataset['data'].tolist()
-    label = dataset['label'].tolist()
-    dataset = zip(index, data, label)
+    if len(dataset) == 3:
+        index = dataset['index'].tolist()
+        data = dataset['data'].tolist()
+        label = dataset['label'].tolist()
+        dataset = zip(index, data, label)
+    elif len(dataset) == 2:
+        data = dataset['data'].tolist()
+        label = dataset['label'].tolist()
+        dataset = zip(data, label)
+    else:
+        print('error!!')
+        exit()
     return dataset
 
 
@@ -80,7 +85,7 @@ def get_data():
         root='./data',
         train=True,
         download=True,
-    )  # 训练数据集
+        transform=transform_train)  # 训练数据集
     testset = torchvision.datasets.CIFAR10(
         root='./data',
         train=False,
@@ -91,42 +96,89 @@ def get_data():
     return trainset, testset
 
 
-def data_place(workers, server, beta=3, ratio=0.01, BATCH_SIZE=128):
+def data_place(workers, server, beta=3, ratio=0.01):
 
     print('data placing start...')
+    logger_server.info('data placing start...')
+    # 判别数据划分是否已经存在
+    name = 'data/mid-data/%d-%.2f-%d/' % (beta, ratio, args.num_worker)
+    if os.path.isfile(name + 'pub.npz') and os.path.isfile(name + 'test.npz'):
+        i = 0
+        while os.path.isfile(name + 'worker%d.npz' % i):
+            i += 1
+        if i == args.num_worker:
+            print('data placement exist already!')
+            logger_server.info('data placement exist already!')
+            public_set = data_load(name + 'pub.npz')
+            server.set_public(public_set)
+            testloader = DataLoader(
+                data_load(
+                    name + 'test.npz'),
+                num_workers=2,
+                batch_size=100,
+                shuffle=False)
+            for k, worker in enumerate(workers):
+                worker.set_test(testloader)
+                worker.set_public(public_set)
+                worker.set_private(data_load(name + 'worker%d.npz' % k))
+            print('data placed!')
+            logger_server.info('data placed!')
+            return
+
     # 获取基本数据
-    trainset, testset = get_data()
-    num_samples = len(trainset)
+    wholeset, testset = get_data()
+    num_samples = len(wholeset)
     num_workers = len(workers)
     num_class = list(range(0, 49999, 5000))
+    testloader = DataLoader(
+        testset,
+        batch_size=100,
+        num_workers=2,
+        shuffle=False)
+    server.set_test(testloader)
+    data_save(testset, name + 'test')
 
     # 为每一个训练样本编号  (data, label) -> (id, data, label)
     np_data = [0] * num_samples
+    trainset = []
     for i in range(num_samples):
-        data, label = trainset[i]
+        data, label = wholeset[i]
         id = num_class[int(label)]
         np_data[id] = data
         num_class[int(label)] += 1
-        trainset[i] = (id, data, label)
-    np.asarray(np_data, dtype=np.float32)
+        trainset.append((id, data, label))
+    np_data = np.asarray([data.numpy() for data in np_data], dtype=np.float32)
     np.save('data/mid-data/origin.npy', np_data)
 
     # 划分私有数据和公有数据
     pub_length = int(num_samples * ratio)
     private_set, public_set = random_split(
         trainset, [num_samples - pub_length, pub_length])
-    name = 'data/mid-data/' + str(ratio) + '-' + str(beta)
     data_save(private_set, name + 'pri')
     data_save(public_set, name + 'pub')
 
     # 根据参数beta划分私有集， beta = n, n in range(0,10), 表示每个worker上只有n种数据
-    for worker in workers:
+    server.set_public(public_set)
+    for i, worker in enumerate(workers):
         worker.set_public(public_set)
+        worker.set_test(testloader)
         selected = random_list(beta)
         private = []
         for sample in private_set:
             if int(sample[2]) in selected:
-                if
+                if random.uniform(0, 1) < 10 / \
+                        (beta * (1 - ratio) * num_workers):
+                    private.append(sample)
+        print(
+            'worker: %d selected %d samples from private set' %
+            (i, len(private)))
+        logger_server.info(
+            'worker: %d selected %d samples from private set' %
+            (i, len(private)))
+        name = 'data/mid-data/%d-%.2f-%d/worker%d' % (
+            beta, ratio, num_workers, i)
+        data_save(private, name)
+        worker.set_private(private)
 
     print('data placed!')
 
@@ -134,11 +186,8 @@ def data_place(workers, server, beta=3, ratio=0.01, BATCH_SIZE=128):
 def train(workers, server, epoch=1, method='batchwise'):
     best_acc = 0.0
     pubset = server.public
+    pubset = DataLoader(pubset, batch_size=128, shuffle=True, num_workers=2)
     criterion = nn.CrossEntropyLoss()
-    if not os.path.isdir('model'):
-        os.mkdir('model')
-    if not os.path.isdir('image'):
-        os.mkdir('image')
     if method == 'batchwise':
         print('train start... method=\'batchwise\' ')
         length = len(workers[0].private)
@@ -153,7 +202,7 @@ def train(workers, server, epoch=1, method='batchwise'):
                 sum_loss = 0.0
                 for j, sample in enumerate(pubset):
                     # 准备数据
-                    inputs, ground_truth = sample
+                    index, inputs, ground_truth = sample
                     inputs = Variable(inputs).to(device)
                     optimizer.zero_grad()
                     # forward + backward
@@ -196,7 +245,7 @@ def train(workers, server, epoch=1, method='batchwise'):
             sum_loss = 0.0
             for j, sample in enumerate(pubset):
                 # 准备数据
-                inputs, ground_truth = sample
+                index, inputs, ground_truth = sample
                 inputs = Variable(inputs).to(device)
                 optimizer.zero_grad()
                 # forward + backward
@@ -243,7 +292,7 @@ def train(workers, server, epoch=1, method='batchwise'):
             sum_loss = 0.0
             for j, sample in enumerate(pubset):
                 # 准备数据
-                inputs, ground_truth = sample
+                index, inputs, ground_truth = sample
                 inputs = Variable(inputs).to(device)
                 # forward + backward
                 outputs = server.model(inputs)
@@ -283,7 +332,7 @@ def train(workers, server, epoch=1, method='batchwise'):
             correct = 0.0
             for j, sample in enumerate(pubset):
                 # 准备数据
-                inputs, labels = sample
+                index, inputs, labels = sample
                 inputs, labels = Variable(inputs).to(
                     device), Variable(labels).to(device)
                 optimizer.zero_grad()

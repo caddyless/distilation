@@ -8,6 +8,7 @@ from init import logger_worker
 from plot import plot_train_trace as ptt
 from init import device
 from init import args
+from torch.utils.data import *
 
 LR = 0.001  # 学习率
 
@@ -102,12 +103,13 @@ class Worker(Host):
                 momentum=0.9,
                 weight_decay=5e-4)  # 优化方式为mini-batch momentum-SGD，并采用L2正则化（权重衰减）
 
+        private = DataLoader(self.private, batch_size=128, shuffle=True, num_workers=2)
         if method == 'batchwise':
             self.model.train()
-            for i, sample in enumerate(self.private, 0):
+            for i, sample in enumerate(private, 0):
                 if i >= index:
                     # 准备数据
-                    inputs, labels = sample
+                    index, inputs, labels = sample
                     inputs, labels = Variable(inputs).to(
                         device), Variable(labels).to(device)
                     optimizer.zero_grad()
@@ -135,8 +137,8 @@ class Worker(Host):
             sum_loss = 0.0
             correct = 0.0
             total = 0.0
-            for i, sample in enumerate(self.private, 0):
-                inputs, labels = sample
+            for i, sample in enumerate(private, 0):
+                index, inputs, labels = sample
                 inputs, labels = Variable(inputs).to(
                     device), Variable(labels).to(device)
                 optimizer.zero_grad()
@@ -168,9 +170,9 @@ class Worker(Host):
                 sum_loss = 0.0
                 correct = 0.0
                 total = 0.0
-                for i, sample in enumerate(self.private, 0):
+                for i, sample in enumerate(private, 0):
                     # 准备数据
-                    inputs, labels = sample
+                    index, inputs, labels = sample
                     inputs, labels = Variable(inputs).to(
                         device), Variable(labels).to(device)
                     optimizer.zero_grad()

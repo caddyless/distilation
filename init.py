@@ -50,6 +50,13 @@ parser.add_argument(
     dest='net',
     default='LeNet',
     help='select the net model')
+parser.add_argument(
+    '-b',
+    dest='beta',
+    default=3,
+    type=int,
+    help='the number of classes each node hold')
+
 args = parser.parse_args()
 
 # 定义是否使用GPU
@@ -77,6 +84,8 @@ if not os.path.isdir('data'):
     os.mkdir('data')
 if not os.path.isdir('data/mid-data'):
     os.mkdir('data/mid-data')
+if not os.path.isdir('data/mid-data/%d-%.2f-%d' % (args.beta, args.ratio, args.num_worker)):
+    os.mkdir('data/mid-data/%d-%.2f-%d' % (args.beta, args.ratio, args.num_worker))
 if not os.path.isdir('log'):
     os.mkdir('log')
 if not os.path.isdir('log/%s-%d-%d-%f' %
