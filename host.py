@@ -103,10 +103,10 @@ class Worker(Host):
     def sta_private(self):
         return self.statistical(self.private)
 
-    def to_img(x):
+    def to_img(self, x):
         x = 0.5 * (x + 1)
         x = x.clamp(0, 1)
-        x = x.view(x.size(0), 1, 28, 28)
+        x = x.view(x.size(0), 3, 32, 32)
         return x
 
     def set_private(self, private):
@@ -119,7 +119,7 @@ class Worker(Host):
         private = DataLoader(self.private, batch_size=128, shuffle=True, num_workers=2)
         for epoch in range(100):
             for data in private:
-                index, img, _ = data
+                index, img, label = data
                 img = Variable(img).to(device)
                 # ===================forward=====================
                 output = self.autoencoder(img)
@@ -132,8 +132,10 @@ class Worker(Host):
             print('epoch [{}/{}], loss:{:.4f}'
                   .format(epoch + 1, 100, loss.data[0]))
             if epoch % 10 == 0:
-                pic = self.to_img(output.cpu().data)
-                save_image(pic, './image_{}.png'.format(epoch))
+                # pic_gen = self.to_img(output.cpu().data)
+                # pic_ori = self.to_img(img)
+                save_image(output.cpu().data, './image_{}_gen.png'.format(epoch))
+                save_image(img, './image_{}_ori.png'.format(epoch))
         torch.save(self.autoencoder.state_dict(), './' + self.name + 'autoencoder.pth')
 
     def train(self, epoch=1, opti='adm', method='batchwise', index=0):

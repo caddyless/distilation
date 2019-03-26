@@ -4,7 +4,7 @@ import logging
 import os
 
 
-os.environ["CUDA_VISIABLE_DEVICES"] = '1'
+# os.environ["CUDA_VISIABLE_DEVICES"] = '1'
 # 从命令行获取参数
 parser = argparse.ArgumentParser()
 parser.add_argument(
