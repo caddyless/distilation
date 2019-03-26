@@ -4,27 +4,30 @@ import torch.nn as nn
 import torch.optim as optim
 from model import ResNet18
 from model import Lenet
+from model import autoencoder
 from init import logger_worker
 from plot import plot_train_trace as ptt
 from init import device
-from init import args
 from torch.utils.data import *
+from torchvision.utils import save_image
 
 LR = 0.001  # 学习率
 
 
 class Host():
-    def __init__(self, name):
+    def __init__(self, name, net):
         self.public = []
         self.test = []
         self.name = name
         self.train_trace = []
         self.verbose = False
-        self.model = []
-        if args.net == 'LeNet':
+        if net == 'LeNet':
             self.model = Lenet().to(device)
-        elif args.net == 'ResNet18':
+        elif net == 'ResNet18':
             self.model = ResNet18().to(device)
+        else:
+            print('net assigment error!')
+            exit()
 
     def set_public(self, public):
         self.public = public
@@ -86,21 +89,52 @@ class Host():
 
 
 class Server(Host):
-    def __init__(self, name):
-        super(Server, self).__init__(name)
+    def __init__(self, name, net):
+        super(Server, self).__init__(name, net)
 
 
 class Worker(Host):
-    def __init__(self, name):
-        super(Worker, self).__init__(name)
+    def __init__(self, name, net):
+        super(Worker, self).__init__(name, net)
         self.private = []
         self.verbose = False
+        self.autoencoder = autoencoder().to(device)
 
     def sta_private(self):
         return self.statistical(self.private)
 
+    def to_img(x):
+        x = 0.5 * (x + 1)
+        x = x.clamp(0, 1)
+        x = x.view(x.size(0), 1, 28, 28)
+        return x
+
     def set_private(self, private):
         self.private = private
+
+    def train_encoder(self):
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(self.autoencoder.parameters(), lr=1e-3,
+                                     weight_decay=1e-5)
+        private = DataLoader(self.private, batch_size=128, shuffle=True, num_workers=2)
+        for epoch in range(100):
+            for data in private:
+                index, img, _ = data
+                img = Variable(img).to(device)
+                # ===================forward=====================
+                output = self.autoencoder(img)
+                loss = criterion(output, img)
+                # ===================backward====================
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            # ===================log========================
+            print('epoch [{}/{}], loss:{:.4f}'
+                  .format(epoch + 1, 100, loss.data[0]))
+            if epoch % 10 == 0:
+                pic = self.to_img(output.cpu().data)
+                save_image(pic, './image_{}.png'.format(epoch))
+        torch.save(self.autoencoder.state_dict(), './' + self.name + 'autoencoder.pth')
 
     def train(self, epoch=1, opti='adm', method='batchwise', index=0):
         assert method == 'batchwise' or method == 'epochwise' or method == 'welled', 'method error!'

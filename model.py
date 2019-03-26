@@ -135,6 +135,9 @@ def ResNet18():
 def Lenet():
     return LeNet()
 
+def autoencoder():
+    return Autoencoder()
+
 
 
 

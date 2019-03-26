@@ -31,12 +31,12 @@ def data_load(file):
     if len(dataset) == 3:
         index = dataset['index'].tolist()
         data = dataset['data'].tolist()
-        data = map(torch.from_numpy, data)
+        data = list(map(torch.Tensor, data))
         label = dataset['label'].tolist()
         dataset = list(zip(index, data, label))
     elif len(dataset) == 2:
         data = dataset['data'].tolist()
-        data = map(torch.from_numpy, data)
+        data = list(map(torch.Tensor, data))
         label = dataset['label'].tolist()
         dataset = list(zip(data, label))
     else:

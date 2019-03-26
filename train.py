@@ -9,17 +9,17 @@ if __name__ == '__main__':
     # 初始化worker和server
     workers = []
     for i in range(args.num_worker):
-        worker = Worker('worker%d' % i)
+        worker = Worker('worker%d' % i, 'LeNet')
         worker.verbose = args.verbose
         workers.append(worker)
-    server = Server('server')
+    server = Server('server', 'ResNet18')
 
     # 在worker和server上分布数据
     dp(workers=workers, server=server, ratio=args.ratio)
-
+    workers[0].train_encoder()
     # 开始训练
-    train(
-        workers=workers,
-        server=server,
-        epoch=args.epoch,
-        method=args.method)
+    # train(
+    #     workers=workers,
+    #     server=server,
+    #     epoch=args.epoch,
+    #     method=args.method)
