@@ -55,6 +55,24 @@ class Host():
             self.train_trace.append((len(self.train_trace), accuracy))
         return accuracy
 
+    def statistical(self, set):
+        categories = [0] * 10
+        if len(set[0]) == 2:
+            for sample in set:
+                data, label = sample
+                categories[int(label)] += 1
+        elif len(set[0]) == 3:
+            for sample in set:
+                index, data, label = sample
+                categories[int(label)] += 1
+        return categories
+
+    def sta_pub(self):
+        return self.statistical(self.public)
+
+    def sta_test(self):
+        return self.statistical(self.test)
+
     def plot(self, filename):
         ptt(self.train_trace, filename)
 
@@ -77,16 +95,11 @@ class Worker(Host):
         self.private = []
         self.verbose = False
 
+    def sta_private(self):
+        return self.statistical(self.private)
+
     def set_private(self, private):
         self.private = private
-
-    def data_distri(self):
-        distribution = [0] * 10
-        for i, sample in enumerate(self.private):
-            data, labels = sample
-            for l in labels:
-                distribution[int(l)] += 1
-        return distribution
 
     def train(self, epoch=1, opti='adm', method='batchwise', index=0):
         assert method == 'batchwise' or method == 'epochwise' or method == 'welled', 'method error!'
@@ -106,7 +119,7 @@ class Worker(Host):
         private = DataLoader(self.private, batch_size=128, shuffle=True, num_workers=2)
         if method == 'batchwise':
             self.model.train()
-            for i, sample in enumerate(private, 0):
+            for i, sample in enumerate(private):
                 if i >= index:
                     # 准备数据
                     index, inputs, labels = sample
@@ -137,7 +150,7 @@ class Worker(Host):
             sum_loss = 0.0
             correct = 0.0
             total = 0.0
-            for i, sample in enumerate(private, 0):
+            for i, sample in enumerate(private):
                 index, inputs, labels = sample
                 inputs, labels = Variable(inputs).to(
                     device), Variable(labels).to(device)
@@ -170,7 +183,7 @@ class Worker(Host):
                 sum_loss = 0.0
                 correct = 0.0
                 total = 0.0
-                for i, sample in enumerate(private, 0):
+                for i, sample in enumerate(private):
                     # 准备数据
                     index, inputs, labels = sample
                     inputs, labels = Variable(inputs).to(

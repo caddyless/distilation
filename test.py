@@ -1,4 +1,5 @@
 import torch
 
-distribution = [0] * 10
-print(distribution)
+a = [1, 2, 3, 4]
+b = [2, 4, 6, 8]
+print(list(zip(a,b)))

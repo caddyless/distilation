@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-
 echo "uploading...."
-path='/home/lijin/PycharmProjects/distilation'
-data="data"
-upload="upload.sh"
-filelist=$(ls $path)
-for file in $filelist
+path=`cd $(dirname $0);pwd -P`
+echo the current path is:$path
+for file in `ls`
 do
-    if [[ "$file" != "$data" && "$file" != "$upload" ]]; then
-        scp -P 3135 $file lijin@202.120.36.100:~/distilation
+    if [ "${file##*.}" = "py" ];then
+	scp -P 3135 $file lijin@202.120.36.100:~/distilation
     fi
 done
 echo "Done!"

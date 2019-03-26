@@ -31,12 +31,14 @@ def data_load(file):
     if len(dataset) == 3:
         index = dataset['index'].tolist()
         data = dataset['data'].tolist()
+        data = map(torch.from_numpy, data)
         label = dataset['label'].tolist()
-        dataset = zip(index, data, label)
+        dataset = list(zip(index, data, label))
     elif len(dataset) == 2:
         data = dataset['data'].tolist()
+        data = map(torch.from_numpy, data)
         label = dataset['label'].tolist()
-        dataset = zip(data, label)
+        dataset = list(zip(data, label))
     else:
         print('error!!')
         exit()
