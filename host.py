@@ -20,6 +20,7 @@ class Host():
         self.name = name
         self.train_trace = []
         self.verbose = False
+        self.model = []
         if args.net == 'LeNet':
             self.model = Lenet().to(device)
         elif args.net == 'ResNet18':
