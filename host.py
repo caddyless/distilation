@@ -112,6 +112,11 @@ class Worker(Host):
     def set_private(self, private):
         self.private = private
 
+    def train_baseline(self, batch):
+        private = DataLoader(self.private, batch_size=batch, shuffle=True, num_workers=1)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adadelta(self.model.parameters(), lr=1e-3, weight_decay=1e-5)
+
     def train_encoder(self):
         criterion = nn.MSELoss()
         optimizer = torch.optim.Adam(self.autoencoder.parameters(), lr=1e-3,
@@ -231,6 +236,7 @@ class Worker(Host):
                     outputs = self.model(inputs)
                     labels = labels.squeeze_()
                     loss = criterion(outputs, labels)
+                    optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
                     # 每训练1个batch打印一次loss和准确率

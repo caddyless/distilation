@@ -14,6 +14,13 @@ import numpy as np
 import random
 
 
+def model_sync(workers, server):
+    print('model sync..')
+    parameter = server.model.state_dict()
+    for worker in workers:
+        worker.model.load_state_dict(parameter)
+
+
 def data_save(dataset, name):
     if len(dataset[0]) == 3:
         np_index = np.asarray([sample[0] for sample in dataset])
@@ -183,6 +190,42 @@ def data_place(workers, server, beta=3, ratio=0.01):
         worker.set_private(private)
 
     print('data placed!')
+
+
+def train_baseline(workers, server, batch=1000, epoch=100, lr=0.001):
+    print('train begin....')
+    dataloader_list = []
+    optimizer_list = []
+    criterion = nn.CrossEntropyLoss()
+    for worker in workers:
+        optimizer_list.append(
+            optim.Adadelta(
+                worker.model.parameters(),
+                weight_decay=5e-4))
+        dataloader_list.append(
+            iter(
+                DataLoader(
+                    worker.private,
+                    batch_size=batch,
+                    shuffle=True,
+                    num_workers=1)))
+    model_sync(workers, server)
+    for e in range(epoch):
+        for i in range(len(dataloader_list[0])):
+            parameter = server.model.parameters().state_dict().copy()
+            for index, worker in enumerate(workers):
+                sample = next(dataloader_list[index])
+                id, inputs, labels = sample
+                inputs, label = Variable(inputs).to(
+                    device), Variable(label).to(device)
+                outputs = worker.model(inputs)
+                labels = labels.squeeze_()
+                loss = criterion(outputs, labels)
+                optimizer_list[index].zero_grad()
+                loss.backward()
+                gradient = worker.model.parameters().state_dict().copy()
+                for k, v in gradient:
+                    parameter[k] += lr * v
 
 
 def train(workers, server, epoch=1, method='batchwise'):
