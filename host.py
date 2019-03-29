@@ -112,16 +112,20 @@ class Worker(Host):
     def set_private(self, private):
         self.private = private
 
-    def train_baseline(self, batch):
-        private = DataLoader(self.private, batch_size=batch, shuffle=True, num_workers=1)
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adadelta(self.model.parameters(), lr=1e-3, weight_decay=1e-5)
+    # def train_baseline(self, batch):
+    #     private = DataLoader(self.private, batch_size=batch, shuffle=True, num_workers=1)
+    #     criterion = nn.CrossEntropyLoss()
+    #     optimizer = torch.optim.Adadelta(self.model.parameters(), lr=1e-3, weight_decay=1e-5)
 
     def train_encoder(self):
         criterion = nn.MSELoss()
-        optimizer = torch.optim.Adam(self.autoencoder.parameters(), lr=1e-3,
-                                     weight_decay=1e-5)
-        private = DataLoader(self.private, batch_size=128, shuffle=True, num_workers=2)
+        optimizer = torch.optim.Adadelta(
+            self.autoencoder.parameters(), lr=1e-3, weight_decay=1e-5)
+        private = DataLoader(
+            self.private,
+            batch_size=128,
+            shuffle=True,
+            num_workers=2)
         for epoch in range(100):
             for data in private:
                 index, img, label = data
@@ -139,9 +143,15 @@ class Worker(Host):
             if epoch % 10 == 0:
                 # pic_gen = self.to_img(output.cpu().data)
                 # pic_ori = self.to_img(img)
-                save_image(output.cpu().data, './image_{}_gen.png'.format(epoch))
+                save_image(
+                    output.cpu().data,
+                    './image_{}_gen.png'.format(epoch))
                 save_image(img, './image_{}_ori.png'.format(epoch))
-        torch.save(self.autoencoder.state_dict(), './' + self.name + 'autoencoder.pth')
+        torch.save(
+            self.autoencoder.state_dict(),
+            './' +
+            self.name +
+            'autoencoder.pth')
 
     def train(self, epoch=1, opti='adm', method='batchwise', index=0):
         assert method == 'batchwise' or method == 'epochwise' or method == 'welled', 'method error!'
@@ -158,7 +168,11 @@ class Worker(Host):
                 momentum=0.9,
                 weight_decay=5e-4)  # 优化方式为mini-batch momentum-SGD，并采用L2正则化（权重衰减）
 
-        private = DataLoader(self.private, batch_size=128, shuffle=True, num_workers=2)
+        private = DataLoader(
+            self.private,
+            batch_size=128,
+            shuffle=True,
+            num_workers=2)
         if method == 'batchwise':
             self.model.train()
             for i, sample in enumerate(private):
@@ -251,5 +265,9 @@ class Worker(Host):
                             self.name, e + 1, (i + 1 + e * length), sum_loss / (i + 1), 100. * correct / total))
                 # 每训练完一个epoch测试一下准确率
                 accuracy = self.evaluation()
-                print('%s | Epoch : %d | Acc：%.3f%%' % (self.name, e, accuracy))
-                logger_worker.info('%s | Epoch : %d | Acc：%.3f%%' % (self.name, e, accuracy))
+                print(
+                    '%s | Epoch : %d | Acc：%.3f%%' %
+                    (self.name, e, accuracy))
+                logger_worker.info(
+                    '%s | Epoch : %d | Acc：%.3f%%' %
+                    (self.name, e, accuracy))
