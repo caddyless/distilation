@@ -12,6 +12,7 @@ from init import logger_server
 import math
 import numpy as np
 import random
+from copy import deepcopy
 
 
 def model_sync(workers, server):
@@ -19,6 +20,19 @@ def model_sync(workers, server):
     parameter = server.model.state_dict()
     for worker in workers:
         worker.model.load_state_dict(parameter)
+    print('synced!')
+
+
+def aggregation(parameter_list):
+    print('start aggregation...')
+    key_list = parameter_list[0].keys()
+    parameter = deepcopy(parameter_list[0])
+    for key in key_list:
+        for i in range(1, len(parameter_list)):
+            parameter[key] += parameter_list[i][key]
+        parameter[key] = parameter[key] / len(parameter_list)
+    print('done!')
+    return parameter
 
 
 def data_save(dataset, name):
@@ -106,7 +120,6 @@ def get_data():
 
 
 def data_place(workers, server, beta=3, ratio=0.01):
-
     print('data placing start...')
     logger_server.info('data placing start...')
     # 判别数据划分是否已经存在
@@ -126,6 +139,7 @@ def data_place(workers, server, beta=3, ratio=0.01):
                 num_workers=2,
                 batch_size=100,
                 shuffle=False)
+            server.set_test(testloader)
             for k, worker in enumerate(workers):
                 worker.set_test(testloader)
                 worker.set_public(public_set)
@@ -175,8 +189,9 @@ def data_place(workers, server, beta=3, ratio=0.01):
         private = []
         for sample in private_set:
             if int(sample[2]) in selected:
-                if random.uniform(0, 1) < 10 / \
-                        (beta * (1 - ratio) * num_workers):
+                if random.uniform(0, 1) < 1:
+                    # if random.uniform(0, 1) < 10 / \
+                    #         (beta * (1 - ratio) * num_workers):
                     private.append(sample)
         print(
             'worker: %d selected %d samples from private set' %
@@ -192,40 +207,62 @@ def data_place(workers, server, beta=3, ratio=0.01):
     print('data placed!')
 
 
-def train_baseline(workers, server, batch=1000, epoch=100, lr=0.001):
+def train_baseline(
+        workers,
+        server,
+        batchsize=200,
+        iteration=1,
+        epoch=100,
+        lr=0.1):
     print('train begin....')
     dataloader_list = []
     optimizer_list = []
     criterion = nn.CrossEntropyLoss()
     for worker in workers:
-        optimizer_list.append(
-            optim.Adadelta(
-                worker.model.parameters(),
-                weight_decay=5e-4))
-        dataloader_list.append(
-            iter(
-                DataLoader(
-                    worker.private,
-                    batch_size=batch,
-                    shuffle=True,
-                    num_workers=1)))
+        item = optim.Adadelta(
+            worker.model.parameters(),
+            weight_decay=5e-4, lr=lr)
+        optimizer_list.append(item)
+        item = DataLoader(
+                worker.private,
+                batch_size=batchsize,
+                shuffle=True,
+                num_workers=1)
+        dataloader_list.append(item)
     model_sync(workers, server)
     for e in range(epoch):
-        for i in range(len(dataloader_list[0])):
-            parameter = server.model.parameters().state_dict().copy()
+        print('epoch : %d' % e)
+        iter_list = [iter(item) for item in dataloader_list]
+        while True:
+            parameter_list = []
+            flag = True
             for index, worker in enumerate(workers):
-                sample = next(dataloader_list[index])
-                id, inputs, labels = sample
-                inputs, label = Variable(inputs).to(
-                    device), Variable(label).to(device)
-                outputs = worker.model(inputs)
-                labels = labels.squeeze_()
-                loss = criterion(outputs, labels)
-                optimizer_list[index].zero_grad()
-                loss.backward()
-                gradient = worker.model.parameters().state_dict().copy()
-                for k, v in gradient:
-                    parameter[k] += lr * v
+                for a in range(iteration):
+                    sample = next(iter_list[index], 'end')
+                    if sample == 'end':
+                        flag = False
+                        break
+                    id, inputs, labels = sample
+                    # print(id)
+                    inputs, labels = Variable(inputs).to(
+                        device), Variable(labels).to(device)
+                    outputs = worker.model(inputs)
+                    labels = labels.squeeze_()
+                    loss = criterion(outputs, labels)
+                    optimizer_list[index].zero_grad()
+                    loss.backward()
+                    optimizer_list[index].step()
+                if flag:
+                    parameter_list.append(worker.model.state_dict())
+                else:
+                    break
+            if flag:
+                parameter = aggregation(parameter_list)
+                server.model.load_state_dict(parameter)
+                server.evaluation()
+                model_sync(workers, server)
+            else:
+                break
 
 
 def train(workers, server, epoch=1, method='batchwise'):

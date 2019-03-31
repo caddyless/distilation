@@ -6,10 +6,12 @@ from model import ResNet18
 from model import Lenet
 from model import autoencoder
 from init import logger_worker
+from init import logger_server
 from plot import plot_train_trace as ptt
 from init import device
 from torch.utils.data import *
 from torchvision.utils import save_image
+from utils import get_data
 
 LR = 0.001  # 学习率
 
@@ -92,6 +94,33 @@ class Server(Host):
     def __init__(self, name, net):
         super(Server, self).__init__(name, net)
 
+    def train_normal(self):
+        trainset, testset = get_data()
+        testloader = DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
+        self.set_test(testloader)
+        self.set_public(trainset)
+        trainloader = DataLoader(self.public, batch_size=128, shuffle=True, num_workers=2)
+        epoch = 120
+        for e in range(epoch):
+            self.model.train()
+            optimizer = optim.Adadelta(self.model.parameters(), weight_decay=5e-4)
+            criterion = nn.CrossEntropyLoss()
+            for i, sample in enumerate(trainloader):
+                rank, inputs, labels = sample
+                inputs, labels = Variable(sample).to(device), Variable(labels).to(device)
+                outputs = self.model(inputs)
+                labels = labels.squeeze_()
+                loss = criterion(outputs, labels)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                print('[server:%s epoch:%d batch:%d] Loss: %.03f ' % (
+                    self.name, e, i, loss.item()))
+                logger_server.info(
+                    '[server:%s epoch:%d batch:%d] Loss: %.03f  ' %
+                    (self.name, e, i, loss.item()))
+            self.evaluation()
+
 
 class Worker(Host):
     def __init__(self, name, net):
@@ -112,8 +141,8 @@ class Worker(Host):
     def set_private(self, private):
         self.private = private
 
-    # def train_baseline(self, batch):
-    #     private = DataLoader(self.private, batch_size=batch, shuffle=True, num_workers=1)
+    # def train_baseline(self, batchsize, iteration):
+    #     private = DataLoader(self.private, batch_size=batchsize, shuffle=True, num_workers=2)
     #     criterion = nn.CrossEntropyLoss()
     #     optimizer = torch.optim.Adadelta(self.model.parameters(), lr=1e-3, weight_decay=1e-5)
 
