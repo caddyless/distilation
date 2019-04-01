@@ -24,7 +24,7 @@ parser.add_argument(
     help='the number of workers')
 parser.add_argument(
     '-r',
-    default=0.01,
+    default=0.02,
     dest='ratio',
     type=float,
     help='the ratio between public dataset and the whole dataset')

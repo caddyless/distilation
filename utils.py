@@ -211,18 +211,13 @@ def train_baseline(
         workers,
         server,
         batchsize=200,
-        iteration=1,
+        iteration=5,
         epoch=100,
-        lr=0.1):
+        lr=1):
     print('train begin....')
     dataloader_list = []
-    optimizer_list = []
     criterion = nn.CrossEntropyLoss()
     for worker in workers:
-        item = optim.Adadelta(
-            worker.model.parameters(),
-            weight_decay=5e-4, lr=lr)
-        optimizer_list.append(item)
         item = DataLoader(
                 worker.private,
                 batch_size=batchsize,
@@ -237,6 +232,9 @@ def train_baseline(
             parameter_list = []
             flag = True
             for index, worker in enumerate(workers):
+                optimizer = optim.Adadelta(
+                    worker.model.parameters(),
+                    weight_decay=5e-4, lr=lr)
                 for a in range(iteration):
                     sample = next(iter_list[index], 'end')
                     if sample == 'end':
@@ -249,9 +247,9 @@ def train_baseline(
                     outputs = worker.model(inputs)
                     labels = labels.squeeze_()
                     loss = criterion(outputs, labels)
-                    optimizer_list[index].zero_grad()
+                    optimizer.zero_grad()
                     loss.backward()
-                    optimizer_list[index].step()
+                    optimizer.step()
                 if flag:
                     parameter_list.append(worker.model.state_dict())
                 else:

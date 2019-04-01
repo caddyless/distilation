@@ -106,19 +106,19 @@ class Server(Host):
             optimizer = optim.Adadelta(self.model.parameters(), weight_decay=5e-4)
             criterion = nn.CrossEntropyLoss()
             for i, sample in enumerate(trainloader):
-                rank, inputs, labels = sample
-                inputs, labels = Variable(sample).to(device), Variable(labels).to(device)
+                inputs, labels = sample
+                inputs, labels = Variable(inputs).to(device), Variable(labels).to(device)
                 outputs = self.model(inputs)
                 labels = labels.squeeze_()
                 loss = criterion(outputs, labels)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                print('[server:%s epoch:%d batch:%d] Loss: %.03f ' % (
-                    self.name, e, i, loss.item()))
-                logger_server.info(
-                    '[server:%s epoch:%d batch:%d] Loss: %.03f  ' %
-                    (self.name, e, i, loss.item()))
+                # print('[server:%s epoch:%d batch:%d] Loss: %.03f ' % (
+                #     self.name, e, i, loss.item()))
+                # logger_server.info(
+                #     '[server:%s epoch:%d batch:%d] Loss: %.03f  ' %
+                #     (self.name, e, i, loss.item()))
             self.evaluation()
 
 
